@@ -1,0 +1,227 @@
+---
+kind: pipeline
+name: default-linux-amd64
+platform:
+  os: linux
+  arch: amd64
+  
+steps:
+- name: build-amd64
+  image: ubuntu:20.04
+  volumes:
+  - name: dockersock
+    path: /var/run
+  commands:
+  - apt-get -y update
+  - DEBIAN_FRONTEND=noninteractive apt-get -y install apt-transport-https curl ca-certificates git gnupg-agent golang-1.14 make mingw-w64 software-properties-common wget
+  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add
+  - add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu focal stable"
+  - apt-get -y update
+  - DEBIAN_FRONTEND=noninteractive apt-get -y install docker-ce-cli
+  - git clone --depth=1 https://github.com/rancher/flannel.git /drone/src/flannel
+  - cd /drone/src/flannel
+  - git fetch --all --tags --prune
+  - git checkout tags/$DRONE_TAG -b $DRONE_TAG
+  - export PATH=$PATH:/usr/lib/go-1.14/bin
+  - TAG=$DRONE_TAG REGISTRY=docker.io/rancher/coreos-flannel make dist/qemu-amd64-static dist/qemu-aarch64-static dist/qemu-arm64-static dist/qemu-s390x-static dist/qemu-ppc64le-static dist/qemu-arm-static
+  - chmod +x dist/qemu-*-static
+  - TAG=$DRONE_TAG REGISTRY=docker.io/rancher/coreos-flannel ARCH=amd64 make dist/flanneld-amd64
+  - tar --transform='flags=r;s|-amd64||' -zcvf dist/flannel-$DRONE_TAG-linux-amd64.tar.gz -C dist flanneld-amd64 mk-docker-opts.sh ../README.md
+  - tar -tvf dist/flannel-$DRONE_TAG-linux-amd64.tar.gz
+  - TAG=$DRONE_TAG REGISTRY=docker.io/rancher/coreos-flannel ARCH=amd64 make dist/flanneld.exe
+  - tar --transform='flags=r;s|-amd64||' -zcvf dist/flannel-$DRONE_TAG-windows-amd64.tar.gz -C dist flanneld.exe mk-docker-opts.sh ../README.md
+  - tar -tvf dist/flannel-$DRONE_TAG-windows-amd64.tar.gz
+  - TAG=$DRONE_TAG REGISTRY=docker.io/rancher/coreos-flannel ARCH=amd64 make dist/flanneld-$DRONE_TAG-amd64.docker
+  - mkdir -p /drone/src/dist
+  - cp dist/flannel-*.tar.gz /drone/src/dist
+  - cp dist/flanneld* /drone/src/dist
+  when:
+    instance:
+    - drone-publish.rancher.io
+    ref:
+    - refs/head/master
+    - refs/tags/*
+    event:
+    - tag
+
+- name: push-amd64
+  image: rancher/dapper:v0.5.2
+  volumes:
+  - name: dockersock
+    path: /var/run
+  commands:
+  - docker login -u $DOCKER_USERNAME -p $DOCKER_PASSWORD
+  - docker push docker.io/rancher/coreos-flannel:$DRONE_TAG-amd64
+  environment:
+    DOCKER_USERNAME:
+      from_secret: docker_username
+    DOCKER_PASSWORD:
+      from_secret: docker_password
+  when:
+    instance:
+    - drone-publish.rancher.io
+    ref:
+    - refs/head/master
+    - refs/tags/*
+    event:
+    - tag
+
+- name: github-release-amd64
+  image: plugins/github-release
+  settings:
+    api_key:
+      from_secret: github_token
+    prerelease: true
+    checksum:
+    - sha256	
+    checksum_file: CHECKSUMsum-amd64.txt
+    checksum_flatten: true
+    files:
+    - "dist/*"
+  when:
+    instance:
+    - drone-publish.rancher.io	
+    ref:
+    - refs/head/master	
+    - refs/tags/*	
+    event:
+    - tag
+  
+services:
+- name: docker
+  image: docker:dind
+  privileged: true
+  volumes:
+  - name: dockersock
+    path: /var/run
+
+volumes:
+  - name: dockersock
+    temp: {}
+
+---
+kind: pipeline
+name: default-linux-arm64
+platform:
+  os: linux
+  arch: arm64
+  
+steps:
+- name: build-arm64
+  image: ubuntu:20.04
+  volumes:
+  - name: dockersock
+    path: /var/run
+  commands:
+  - apt-get -y update
+  - DEBIAN_FRONTEND=noninteractive apt-get -y install apt-transport-https curl ca-certificates git gnupg-agent golang-1.14 make mingw-w64 software-properties-common wget
+  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add
+  - add-apt-repository "deb [arch=arm64] https://download.docker.com/linux/ubuntu focal stable"
+  - apt-get -y update
+  - DEBIAN_FRONTEND=noninteractive apt-get -y install docker-ce-cli
+  - git clone --depth=1 https://github.com/rancher/flannel.git /drone/src/flannel
+  - cd /drone/src/flannel
+  - git fetch --all --tags --prune
+  - git checkout tags/$DRONE_TAG -b $DRONE_TAG
+  - export PATH=$PATH:/usr/lib/go-1.14/bin
+  - TAG=$DRONE_TAG REGISTRY=docker.io/rancher/coreos-flannel make dist/qemu-amd64-static dist/qemu-aarch64-static dist/qemu-arm64-static dist/qemu-s390x-static dist/qemu-ppc64le-static dist/qemu-arm-static
+  - chmod +x dist/qemu-*-static
+  - TAG=$DRONE_TAG REGISTRY=docker.io/rancher/coreos-flannel ARCH=arm64 make dist/flanneld-arm64
+  - tar --transform='flags=r;s|-arm64||' -zcvf dist/flannel-$DRONE_TAG-linux-arm64.tar.gz -C dist flanneld-arm64 mk-docker-opts.sh ../README.md
+  - tar -tvf dist/flannel-$DRONE_TAG-linux-arm64.tar.gz
+  - TAG=$DRONE_TAG REGISTRY=docker.io/rancher/coreos-flannel ARCH=arm64 make dist/flanneld-$DRONE_TAG-arm64.docker
+  - mkdir -p /drone/src/dist
+  - cp dist/flannel-*.tar.gz /drone/src/dist
+  - cp dist/flanneld* /drone/src/dist
+  when:
+    instance:
+    - drone-publish.rancher.io
+    ref:
+    - refs/head/master
+    - refs/tags/*
+    event:
+    - tag
+
+- name: push-arm64
+  image: rancher/dapper:v0.5.2
+  volumes:
+  - name: dockersock
+    path: /var/run
+  commands:
+  - docker login -u $DOCKER_USERNAME -p $DOCKER_PASSWORD
+  - docker push docker.io/rancher/coreos-flannel:$DRONE_TAG-arm64
+  environment:
+    DOCKER_USERNAME:
+      from_secret: docker_username
+    DOCKER_PASSWORD:
+      from_secret: docker_password
+  when:
+    instance:
+    - drone-publish.rancher.io
+    ref:
+    - refs/head/master
+    - refs/tags/*
+    event:
+    - tag
+
+- name: github-release-arm64
+  image: plugins/github-release
+  settings:
+    api_key:
+      from_secret: github_token
+    prerelease: true
+    checksum:
+    - sha256	
+    checksum_file: CHECKSUMsum-arm64.txt
+    checksum_flatten: true
+    files:
+    - "dist/*"
+  when:
+    instance:
+    - drone-publish.rancher.io	
+    ref:
+    - refs/head/master	
+    - refs/tags/*	
+    event:
+    - tag
+
+services:
+- name: docker
+  image: docker:dind
+  privileged: true
+  volumes:
+  - name: dockersock
+    path: /var/run
+
+volumes:
+  - name: dockersock
+    temp: {}
+---
+kind: pipeline
+name: manifest
+
+platform:
+  os: linux
+  arch: amd64
+
+steps:
+- name: push-manifest
+  image: plugins/manifest
+  settings:
+    username:
+      from_secret: docker_username
+    password:
+      from_secret: docker_password
+    spec: manifest.tmpl
+  when:
+    instance:
+    - drone-publish.rancher.io
+    ref:
+    - refs/head/master
+    - refs/tags/*
+    event:
+    - tag
+
+depends_on:
+- default-linux-amd64
+- default-linux-arm64
